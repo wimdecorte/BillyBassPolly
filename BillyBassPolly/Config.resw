@@ -133,4 +133,7 @@
     <value>landmammal.soliant.cloud</value>
     <comment>DNS name</comment>
   </data>
+  <data name="testing" xml:space="preserve">
+    <value>true</value>
+  </data>
 </root>

@@ -27,6 +27,7 @@ namespace BillyBassPolly
         string token;
         DateTime tokenRecieved;
         LoggingChannel lc;
+        private bool isRunning = false;
 
         public void Run(IBackgroundTaskInstance taskInstance)
         {
@@ -49,22 +50,62 @@ namespace BillyBassPolly
             // log into the Events Tracing for Windows ETW
             // on the Device Portal, ETW tab, pick "Microsoft-Windows-Diagnostics-LoggingChannel" from the registered providers
             // pick level 5 and enable
-
             lc = new LoggingChannel("BillyBass", null, new Guid("4bd2826e-54a1-4ba9-bf63-92b73ea1ac4a"));
             lc.LogMessage("Starting up.");
 
-            // start the timer
-            ThreadPoolTimer timer = ThreadPoolTimer.CreatePeriodicTimer(Timer_Tick, TimeSpan.FromSeconds(1));
+            // determine whether we are in testing  mode
+            var resources = new ResourceLoader("Config");
+            bool testing = Convert.ToBoolean(resources.GetString("testing"));
+            lc.LogMessage("Testing = " + testing.ToString());
+            if (testing == false)
+            {
+                // start the timer
+                ThreadPoolTimer timer = ThreadPoolTimer.CreatePeriodicTimer(Timer_Tick, TimeSpan.FromSeconds(1));
+            }
+            else
+            {
+                // start the timer
+                ThreadPoolTimer timer = ThreadPoolTimer.CreatePeriodicTimer(Timer_Tick, TimeSpan.FromSeconds(5));
+            }
         }
+
+        /*
+        private void MediaPlayer_MediaEnded(MediaPlayer sender, object args)
+        {
+            lc.LogMessage("audio file finished playing....", LoggingLevel.Information);
+        }
+        */
+
+        /*
+        private void MediaPlayer_Play(MediaPlayer sender, object args)
+        {
+            try
+            {
+                sender.Play();
+            }
+            catch (Exception)
+            {
+                lc.LogMessage("Could not play audio file....", LoggingLevel.Critical);
+            }
+        }
+        */
+
+        private void MediaSource_OpenOperationCompleted(MediaSource sender, MediaSourceOpenOperationCompletedEventArgs args)
+        {
+            TimeSpan duration = sender.Duration.GetValueOrDefault();
+            lc.LogMessage("Finished loading the audio file, duration = " + duration.TotalSeconds + " seconds", LoggingLevel.Information);
+        }
+
 
         private FMS GetFMSinstance()
         {
-            var resources = new ResourceLoader("config");
+            var resources = new ResourceLoader("Config");
             var fm_server_address = resources.GetString("fm_server_DNS_name");
             var fm_file = resources.GetString("fm_file");
             var fm_layout = resources.GetString("fm_layout");
             var fm_account = resources.GetString("fm_account");
             var fm_pw = resources.GetString("fm_pw");
+
 
             FMS17 fms = new FMS17(fm_server_address, fm_account, fm_pw);
             fms.SetFile(fm_file);
@@ -75,6 +116,22 @@ namespace BillyBassPolly
 
         private async void Timer_Tick(ThreadPoolTimer timer)
         {
+            if (isRunning == true)
+            {
+                lc.LogMessage("still running previous check....", LoggingLevel.Information);
+                return;
+            }
+
+            await GetTaskFromFMS();
+            isRunning = false;
+
+        }
+
+        private async System.Threading.Tasks.Task GetTaskFromFMS()
+        {
+
+            // flag that we are running
+            isRunning = true;
 
             // record the start time
             DateTime start = DateTime.Now;
@@ -98,17 +155,6 @@ namespace BillyBassPolly
                     lc.LogMessage("Token " + token + " Received at " + tokenRecieved.ToLongTimeString(), LoggingLevel.Information);
                 }
             }
-            else if (DateTime.Now >= tokenRecieved.AddMinutes(14))
-            {
-                // don't really need to log out after 14 minutes, we can just re-use the same token
-
-                int logoutResponse = await fmserver.Logout();
-                token = string.Empty;
-                tokenRecieved = DateTime.Now;
-                lc.LogMessage("Logging out of FMS.", LoggingLevel.Information);
-                // we'll just wait for the next timer run
-                return;
-            }
 
             if (token != string.Empty)
             {
@@ -120,7 +166,8 @@ namespace BillyBassPolly
                 var find = fmserver.FindRequest();
 
                 // we only need one at most
-                find.SetHowManyRecords(1);
+                //find.SetStartRecord(1);
+                //find.SetHowManyRecords(1);
 
                 var request1 = find.SearchCriterium();
                 request1.AddFieldSearch("flag_ready", "1");
@@ -128,43 +175,97 @@ namespace BillyBassPolly
                 var foundResponse = await find.Execute();
                 if (foundResponse.errorCode > 0)
                 {
-                    lc.LogMessage("Search for tasks failed. " + fmserver.lastErrorCode.ToString() + " - " + fmserver.lastErrorMessage, LoggingLevel.Error);
+                    lc.LogMessage("Nothing to do. " + fmserver.lastErrorCode.ToString() + " - " + fmserver.lastErrorMessage, LoggingLevel.Error);
                     return;
                 }
 
-                // ge the FM record
+                // get the FM record
                 var record = foundResponse.data.foundSet.records.First();
 
                 // capture the record id, we'll need it to later update the record
                 int taskId = Convert.ToInt32(record.recordId);
 
+                // capture whatever is in the notes fields already so that we can append to it
+                string notes = record.fieldsAndData.Where(pair => pair.Key == "notes").Select(pair => pair.Value).First();
+
                 // download the audio file
                 string url = record.fieldsAndData.Where(pair => pair.Key == "audio_file").Select(pair => pair.Value).First();
+                StorageFolder folder = ApplicationData.Current.LocalFolder;
+                fmserver.SetDownloadFolder(folder.Path + @"\");
 
-                StorageFolder folder = KnownFolders.DocumentsLibrary;
-                fmserver.SetDownloadFolder(folder.Path);
+                FileInfo audioFile;
+                string fmsMessage = string.Empty;
+                try
+                {
+                    audioFile = await fmserver.DownloadFileFromContainerField(url, "play.mp3");
+                    fmsMessage = fmserver.lastErrorMessage;
+                    lc.LogMessage("audio file downloaded: " + audioFile.FullName, LoggingLevel.Information);
+                }
+                catch(Exception ex)
+                {
+                    lc.LogMessage("audio file not  downloaded.", LoggingLevel.Error);
+                    // unflag the FM record and write the exception to notes
+                    var req = fmserver.EditRequest(taskId);
+                    req.AddField("flag_completed_when", DateTime.Now.ToString());
+                    req.AddField("flag_ready", "");
+                    req.AddField("notes", DateTime.Now.ToLongDateString() + " " + DateTime.Now.ToLongTimeString() + " - error! " + ex.InnerException.Message + Environment.NewLine + notes);
+                    // execute the request
+                    var resp = await req.Execute();
+                    return;
+                }
 
-                FileInfo audioFile = await fmserver.DownloadFileFromContainerField(url);
+                if (audioFile != null)
+                {
+                    try
+                    {
+                        lc.LogMessage("before playing audio file: " + audioFile.FullName, LoggingLevel.Information);
+                        // play the audio
+                        StorageFile file = await StorageFile.GetFileFromPathAsync(audioFile.FullName);
+                        //MediaPlayer billy = BackgroundMediaPlayer.Current;
+                        MediaPlayer billy = new MediaPlayer();
+                        billy.AutoPlay = false;
 
+                        //billy.MediaEnded += MediaPlayer_MediaEnded;
+                        //billy.MediaOpened += MediaPlayer_Play;
+                        //billy.SetFileSource(file);
 
-                // play the audio
-                StorageFile file = await StorageFile.GetFileFromPathAsync(audioFile.FullName);
-                //MediaPlayer player = BackgroundMediaPlayer.Current;
-                MediaPlayer billy = new MediaPlayer();
-                billy.AutoPlay = false;
-                //billy.SetFileSource(file);
-                billy.Source = MediaSource.CreateFromStorageFile(file);
-                billy.Play();
+                        MediaSource source = MediaSource.CreateFromStorageFile(file);
+                        source.OpenOperationCompleted += MediaSource_OpenOperationCompleted;
+                        await source.OpenAsync();
+                        billy.Source = source;
+                        billy.Play();
+                        lc.LogMessage("after playing audio file.", LoggingLevel.Information);
+                        source.Dispose();
+                        billy.Dispose();
+                        GC.Collect();
 
-                // delete the file
-                await file.DeleteAsync();
-
+                        // delete the file
+                        lc.LogMessage("before deleting audio file.", LoggingLevel.Information);
+                        await file.DeleteAsync();
+                        lc.LogMessage("after deleting audio file.", LoggingLevel.Information);
+                    }
+                    catch(Exception ex)
+                    {
+                        fmsMessage = ex.InnerException.Message;
+                    }
+                }
 
                 // write an update to FMS
                 var editRequest = fmserver.EditRequest(taskId);
                 editRequest.AddField("flag_completed_when", DateTime.Now.ToString());
                 editRequest.AddField("flag_ready", "");
-
+                if(audioFile == null)
+                {
+                    editRequest.AddField("notes", DateTime.Now.ToLongDateString() + " " + DateTime.Now.ToLongTimeString() + " - error! No file was downloaed" + Environment.NewLine + notes);
+                }
+                else if(fmsMessage != "OK")
+                {
+                    editRequest.AddField("notes", DateTime.Now.ToLongDateString() + " " + DateTime.Now.ToLongTimeString() + " - error! Could not play the audio" + Environment.NewLine + notes);
+                }
+                else
+                {
+                    editRequest.AddField("notes", DateTime.Now.ToLongDateString() + " " + DateTime.Now.ToLongTimeString() + " - Done!" + Environment.NewLine + notes);
+                }
                 // execute the request
                 var response = await editRequest.Execute();
                 if (fmserver.lastErrorCode == 0)
@@ -177,12 +278,20 @@ namespace BillyBassPolly
                 }
 
 
+
                 // don't log out, re-using the token for 14 minutes or so
                 //await fmserver.Logout();
                 //token = string.Empty;
+                if (DateTime.Now >= tokenRecieved.AddMinutes(14))
+                {
+                    // don't really need to log out after 14 minutes, we can just re-use the same token
+
+                    int logoutResponse = await fmserver.Logout();
+                    token = string.Empty;
+                    tokenRecieved = DateTime.Now;
+                    lc.LogMessage("Logging out of FMS.", LoggingLevel.Information);
+                }
             }
-
-
         }
     }
 }
