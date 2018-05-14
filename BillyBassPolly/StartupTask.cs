@@ -221,19 +221,16 @@ namespace BillyBassPolly
                         lc.LogMessage("before playing audio file: " + audioFile.FullName, LoggingLevel.Information);
                         // play the audio
                         StorageFile file = await StorageFile.GetFileFromPathAsync(audioFile.FullName);
-                        //MediaPlayer billy = BackgroundMediaPlayer.Current;
                         MediaPlayer billy = new MediaPlayer();
                         billy.AutoPlay = false;
-
-                        //billy.MediaEnded += MediaPlayer_MediaEnded;
-                        //billy.MediaOpened += MediaPlayer_Play;
-                        //billy.SetFileSource(file);
 
                         MediaSource source = MediaSource.CreateFromStorageFile(file);
                         source.OpenOperationCompleted += MediaSource_OpenOperationCompleted;
                         await source.OpenAsync();
+
                         billy.Source = source;
                         billy.Play();
+                        Thread.Sleep((Convert.ToInt32(source.Duration.GetValueOrDefault().TotalSeconds)) * 1000 + 1000);
                         lc.LogMessage("after playing audio file.", LoggingLevel.Information);
                         source.Dispose();
                         billy.Dispose();
