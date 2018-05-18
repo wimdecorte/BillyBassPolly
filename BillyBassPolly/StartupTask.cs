@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Net.Http;
 using Windows.ApplicationModel.Background;
 using FMdotNet__DataAPI;
 using System.Net;
@@ -14,8 +11,6 @@ using Windows.Storage;
 using Windows.Media.Playback;
 using Windows.Media.Core;
 using System.IO;
-using Windows.Media.Audio;
-using Windows.Media.Render;
 using System.Threading.Tasks;
 
 
@@ -184,7 +179,7 @@ namespace BillyBassPolly
                     return;
                 }
 
-                // get the FM record
+                // get the first FM record, we are just going to takcle that one
                 var record = foundResponse.data.foundSet.records.First();
 
                 // capture the record id, we'll need it to later update the record
@@ -234,7 +229,7 @@ namespace BillyBassPolly
                         var player = new AudioPlayer();
                         await player.LoadFileAsync(file);
                         player.Play("play.mp3", 0.5);
-                        //GC.Collect();
+                        GC.Collect();
 
                         // delete the file
                         lc.LogMessage("before deleting audio file.", LoggingLevel.Information);
@@ -270,7 +265,7 @@ namespace BillyBassPolly
                 {
                     editRequest.AddField("notes", DateTime.Now.ToLongDateString() + " " + DateTime.Now.ToLongTimeString() + " - Done!" + Environment.NewLine + notes);
                 }
-                // execute the request
+                // execute the edit request
                 var response = await editRequest.Execute();
                 if (fmserver.lastErrorCode == 0)
                 {

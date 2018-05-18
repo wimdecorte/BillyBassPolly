@@ -1,14 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using Windows.Media.Audio;
-using Windows.Media.Core;
 using Windows.Media.Render;
 using Windows.Storage;
-using Windows.Foundation;
 using Windows.Storage.FileProperties;
 using System.Threading;
 
