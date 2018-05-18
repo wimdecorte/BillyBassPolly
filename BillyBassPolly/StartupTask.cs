@@ -14,6 +14,9 @@ using Windows.Storage;
 using Windows.Media.Playback;
 using Windows.Media.Core;
 using System.IO;
+using Windows.Media.Audio;
+using Windows.Media.Render;
+using System.Threading.Tasks;
 
 
 // The Background Application template is documented at http://go.microsoft.com/fwlink/?LinkID=533884&clcid=0x409
@@ -221,27 +224,29 @@ namespace BillyBassPolly
                         lc.LogMessage("before playing audio file: " + audioFile.FullName, LoggingLevel.Information);
                         // play the audio
                         StorageFile file = await StorageFile.GetFileFromPathAsync(audioFile.FullName);
-                        MediaPlayer billy = new MediaPlayer();
-                        billy.AutoPlay = false;
 
-                        MediaSource source = MediaSource.CreateFromStorageFile(file);
-                        source.OpenOperationCompleted += MediaSource_OpenOperationCompleted;
-                        await source.OpenAsync();
+                        //await PlayAudioThroughMediaPlayer(file);
+                        //Thread.Sleep(2000);
 
-                        billy.Source = source;
-                        billy.Play();
-                        Thread.Sleep((Convert.ToInt32(source.Duration.GetValueOrDefault().TotalSeconds)) * 1000 + 1000);
-                        lc.LogMessage("after playing audio file.", LoggingLevel.Information);
-                        source.Dispose();
-                        billy.Dispose();
-                        GC.Collect();
+                        
+                        var player = new AudioPlayer();
+                        await player.LoadFileAsync(file);
+                        player.Play("play.mp3", 0.5);
+                        //GC.Collect();
 
                         // delete the file
                         lc.LogMessage("before deleting audio file.", LoggingLevel.Information);
-                        await file.DeleteAsync();
+                        try
+                        {
+                            await file.DeleteAsync();
+                        }
+                        catch(Exception ex)
+                        {
+                            lc.LogMessage("Could not delete audio file: " + ex.InnerException, LoggingLevel.Error);
+                        }
                         lc.LogMessage("after deleting audio file.", LoggingLevel.Information);
                     }
-                    catch(Exception ex)
+                    catch (Exception ex)
                     {
                         fmsMessage = ex.InnerException.Message;
                     }
@@ -289,6 +294,26 @@ namespace BillyBassPolly
                     lc.LogMessage("Logging out of FMS.", LoggingLevel.Information);
                 }
             }
+        }
+
+        private async Task PlayAudioThroughMediaPlayer(StorageFile file)
+        {
+            // uses the normal MediaPlayer but due to Raspberry firmware issues, there is a loud
+            // pop at the start and end of the audio
+
+            MediaPlayer billy = new MediaPlayer();
+            billy.AutoPlay = false;
+
+            MediaSource source = MediaSource.CreateFromStorageFile(file);
+            source.OpenOperationCompleted += MediaSource_OpenOperationCompleted;
+            await source.OpenAsync();
+
+            billy.Source = source;
+            billy.Play();
+            Thread.Sleep((Convert.ToInt32(source.Duration.GetValueOrDefault().TotalSeconds)) * 1000 + 1000);
+            lc.LogMessage("after playing audio file.", LoggingLevel.Information);
+            source.Dispose();
+            billy.Dispose();
         }
     }
 }

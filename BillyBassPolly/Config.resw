@@ -134,6 +134,6 @@
     <comment>DNS name</comment>
   </data>
   <data name="testing" xml:space="preserve">
-    <value>true</value>
+    <value>false</value>
   </data>
 </root>
