@@ -59,16 +59,18 @@ namespace BillyBassPolly
             // determine whether we are in testing  mode
             var resources = new ResourceLoader("Config");
             bool testing = Convert.ToBoolean(resources.GetString("testing"));
+            int polling_interval_testing = Convert.ToInt16(resources.GetString(" polling_interval_testing"));
+            int polling_interval = Convert.ToInt16(resources.GetString(" polling_interval"));
             lc.LogMessage("Testing = " + testing.ToString());
             if (testing == false)
             {
                 // start the timer
-                ThreadPoolTimer timer = ThreadPoolTimer.CreatePeriodicTimer(Timer_Tick, TimeSpan.FromSeconds(1));
+                ThreadPoolTimer timer = ThreadPoolTimer.CreatePeriodicTimer(Timer_Tick, TimeSpan.FromMilliseconds(polling_interval));
             }
             else
             {
                 // start the timer
-                ThreadPoolTimer timer = ThreadPoolTimer.CreatePeriodicTimer(Timer_Tick, TimeSpan.FromSeconds(5));
+                ThreadPoolTimer timer = ThreadPoolTimer.CreatePeriodicTimer(Timer_Tick, TimeSpan.FromSeconds(polling_interval_testing));
             }
         }
 

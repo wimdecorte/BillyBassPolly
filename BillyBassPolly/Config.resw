@@ -133,6 +133,14 @@
     <value>landmammal.soliant.cloud</value>
     <comment>DNS name</comment>
   </data>
+  <data name="polling_interval" xml:space="preserve">
+    <value>250</value>
+    <comment>in milliseconds, when not in testing mode</comment>
+  </data>
+  <data name="polling_interval_testing" xml:space="preserve">
+    <value>5</value>
+    <comment>in seconds, when testing = true</comment>
+  </data>
   <data name="testing" xml:space="preserve">
     <value>false</value>
   </data>
